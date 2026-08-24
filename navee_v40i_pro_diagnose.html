@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>NAVEE V40i Pro – BLE Diagnose</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:#0b0f17;color:#f1f5f9;font-family:Arial,sans-serif}
+header{padding:20px;background:#121927;border-bottom:1px solid #263247}
+main{max-width:720px;margin:auto;padding:15px}
+h1{margin:0;font-size:24px} h2{font-size:19px}
+.small{color:#94a3b8;font-size:13px;line-height:1.45}
+.card{background:#151c29;border:1px solid #273348;border-radius:18px;padding:18px;margin-bottom:14px}
+.status{display:inline-block;padding:8px 12px;border-radius:30px;font-size:14px;font-weight:bold}
+.offline{background:#3a1d25;color:#ff8793}.connecting{background:#3b3215;color:#ffd35c}.online{background:#153b2a;color:#62e99b}
+button{width:100%;border:0;border-radius:13px;padding:15px;margin-top:10px;font-size:15px;font-weight:bold;color:#fff;background:#2563eb}
+button:disabled{opacity:.45}.dark{background:#29364a}.danger{background:#9f2935}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.value{font-size:22px;font-weight:bold;margin-top:6px}.value-card{background:#0d131e;border-radius:13px;padding:14px}
+#services{max-height:440px;overflow:auto}.service{background:#0d131e;border-radius:12px;padding:14px;margin-top:10px;word-break:break-word}
+.char{background:#131c2a;border-radius:9px;padding:10px;margin-top:9px;font:12px monospace;line-height:1.5}
+#log{background:#060911;border-radius:12px;padding:12px;min-height:180px;max-height:360px;overflow:auto;white-space:pre-wrap;font:12px monospace;color:#8bd5ff}
+.warning{background:#302511;border-left:3px solid #f4c542;padding:13px;border-radius:8px;color:#e7d9b1;font-size:13px;line-height:1.45}
+.ok{background:#102d21;border-left:3px solid #42d392;padding:13px;border-radius:8px;color:#b9f5d7;font-size:13px;line-height:1.45}
+</style>
+</head>
+<body>
+<header>
+<h1>🛴 NAVEE V40i Pro</h1>
+<div class="small">BLE-Diagnose – ohne Motorbefehle</div>
+</header>
+
+<main>
+<section class="card">
+<div id="status" class="status offline">● Nicht verbunden</div>
+<h2 id="deviceName">Kein Gerät ausgewählt</h2>
+<div id="deviceId" class="small">Noch keine Bluetooth-Verbindung.</div>
+<button id="connect">🔵 SCOOTER AUSWÄHLEN & VERBINDEN</button>
+<button id="disconnect" class="danger" disabled>VERBINDUNG TRENNEN</button>
+</section>
+
+<section class="card">
+<h2>Verbindungsdiagnose</h2>
+<div class="grid">
+<div class="value-card"><div class="small">GATT</div><div class="value" id="gatt">--</div></div>
+<div class="value-card"><div class="small">Bluetooth</div><div class="value" id="bt">--</div></div>
+<div class="value-card"><div class="small">Verbindungszeit</div><div class="value" id="uptime">--</div></div>
+<div class="value-card"><div class="small">Trennungen</div><div class="value" id="drops">0</div></div>
+</div>
+<div class="ok" style="margin-top:12px">
+Diese Version sendet <b>keine</b> Motor-, Zero-Start-, Schreib- oder Konfigurationsbefehle. Sie versucht zuerst nur herauszufinden, ob Chrome die GATT-Verbindung stabil halten kann.
+</div>
+</section>
+
+<section class="card">
+<h2>BLE Services</h2>
+<div class="small">Erst nach erfolgreicher Verbindung scannen. Dadurch vermeiden wir zusätzliche GATT-Operationen direkt beim Connect.</div>
+<button id="scan" class="dark" disabled>🔍 SERVICES & CHARACTERISTICS SCANNEN</button>
+<div id="services"><div class="small" style="margin-top:12px">Noch kein Scan.</div></div>
+</section>
+
+<section class="card">
+<h2>Test</h2>
+<button id="test10" class="dark" disabled>⏱️ 15-SEKUNDEN-STABILITÄTSTEST</button>
+<div class="small" style="margin-top:8px">Der Test führt währenddessen keine BLE-Lese-/Schreiboperation aus.</div>
+</section>
+
+<section class="card">
+<h2>Diagnose-Log</h2>
+<button id="clear" class="dark">LOG LÖSCHEN</button>
+<div id="log"></div>
+</section>
+</main>
+
+<script>
+"use strict";
+
+let device=null;
+let server=null;
+let connectedAt=0;
+let timer=null;
+let drops=0;
+let disconnectHandler=null;
+
+const $=id=>document.getElementById(id);
+const logBox=$("log");
+
+function log(msg){
+  const t=new Date().toLocaleTimeString();
+  logBox.textContent += `[${t}] ${msg}\n`;
+  logBox.scrollTop=logBox.scrollHeight;
+}
+
+function setStatus(text,type){
+  $("status").textContent="● "+text;
+  $("status").className="status "+type;
+  $("gatt").textContent=text;
+}
+
+function ui(connected){
+  $("connect").disabled=connected;
+  $("disconnect").disabled=!connected;
+  $("scan").disabled=!connected;
+  $("test10").disabled=!connected;
+}
+
+async function checkBluetooth(){
+  if(!navigator.bluetooth){
+    $("bt").textContent="Nicht unterstützt";
+    log("Web Bluetooth wird von diesem Browser nicht unterstützt.");
+    return false;
+  }
+  try{
+    const available=await navigator.bluetooth.getAvailability();
+    $("bt").textContent=available?"Bereit":"Aus";
+    return available;
+  }catch(e){
+    $("bt").textContent="Bereit";
+    return true;
+  }
+}
+
+async function choose(){
+  if(!(await checkBluetooth())) throw new Error("Bluetooth ist nicht verfügbar.");
+
+  log("Öffne die Android-Bluetooth-Auswahl…");
+
+  device=await navigator.bluetooth.requestDevice({
+    acceptAllDevices:true,
+    optionalServices:[
+      "battery_service",
+      "device_information",
+      "generic_access",
+      "generic_attribute"
+    ]
+  });
+
+  $("deviceName").textContent=device.name || "Unbekanntes BLE-Gerät";
+  $("deviceId").textContent="ID: "+device.id;
+
+  if(disconnectHandler){
+    try{device.removeEventListener("gattserverdisconnected",disconnectHandler)}catch{}
+  }
+
+  disconnectHandler=onDisconnect;
+  device.addEventListener("gattserverdisconnected",disconnectHandler);
+
+  log("Ausgewählt: "+(device.name||"unbekannt"));
+  log("Device-ID: "+device.id);
+}
+
+async function connect(){
+  if(!device) return;
+  if(device.gatt.connected){
+    server=device.gatt;
+    onConnected();
+    return;
+  }
+
+  try{
+    setStatus("Verbinde…","connecting");
+    log("Rufe device.gatt.connect() auf…");
+
+    const started=performance.now();
+    server=await device.gatt.connect();
+    const elapsed=Math.round(performance.now()-started);
+
+    log("gatt.connect() beendet nach "+elapsed+" ms.");
+
+    if(!server || !server.connected){
+      throw new Error("GATT-Server meldet keine aktive Verbindung.");
+    }
+
+    onConnected();
+  }catch(e){
+    server=null;
+    setStatus("Verbindung fehlgeschlagen","offline");
+    ui(false);
+    log("CONNECT ERROR: "+(e.name||"Error")+": "+(e.message||e));
+  }
+}
+
+function onConnected(){
+  connectedAt=Date.now();
+  $("drops").textContent=drops;
+  setStatus("Verbunden","online");
+  ui(true);
+  log("GATT-Verbindung ist aktiv.");
+  log("WICHTIG: Es werden jetzt bewusst KEINE Services automatisch gelesen.");
+  startUptime();
+}
+
+function startUptime(){
+  stopUptime();
+  timer=setInterval(()=>{
+    if(connectedAt && device?.gatt?.connected){
+      $("uptime").textContent=Math.floor((Date.now()-connectedAt)/1000)+" s";
+    }
+  },250);
+}
+
+function stopUptime(){
+  if(timer){clearInterval(timer);timer=null}
+}
+
+function onDisconnect(){
+  drops++;
+  $("drops").textContent=drops;
+  stopUptime();
+  server=null;
+  $("uptime").textContent="--";
+  setStatus("Scooter getrennt","offline");
+  ui(false);
+  log("⚠️ gattserverdisconnected wurde ausgelöst.");
+  log("Chrome/Android meldet: GATT-Verbindung wurde vom Gerät/Stack beendet.");
+}
+
+async function disconnect(){
+  if(device?.gatt?.connected){
+    log("Manuelles Trennen…");
+    device.gatt.disconnect();
+  }
+  stopUptime();
+  ui(false);
+}
+
+async function scanServices(){
+  if(!server || !server.connected){
+    log("SCAN ABGEBROCHEN: keine aktive GATT-Verbindung.");
+    return;
+  }
+
+  $("services").innerHTML="";
+  log("Starte manuellen Service-Scan…");
+
+  try{
+    const services=await server.getPrimaryServices();
+    log("Primary Services gefunden: "+services.length);
+
+    for(const service of services){
+      const box=document.createElement("div");
+      box.className="service";
+      box.innerHTML="<b>Service</b><br>"+service.uuid;
+
+      try{
+        const chars=await service.getCharacteristics();
+        log("Service "+service.uuid+": "+chars.length+" Characteristic(s)");
+
+        for(const c of chars){
+          const props=[];
+          if(c.properties.read) props.push("READ");
+          if(c.properties.write) props.push("WRITE");
+          if(c.properties.writeWithoutResponse) props.push("WRITE_NO_RESPONSE");
+          if(c.properties.notify) props.push("NOTIFY");
+          if(c.properties.indicate) props.push("INDICATE");
+
+          const cb=document.createElement("div");
+          cb.className="char";
+          cb.innerHTML="<b>Characteristic</b><br>"+c.uuid+
+            "<br>Eigenschaften: "+(props.join(", ")||"keine");
+          box.appendChild(cb);
+          log("  "+c.uuid+" ["+(props.join(", ")||"keine")+"]");
+        }
+      }catch(e){
+        log("  Characteristics konnten nicht gelesen werden: "+(e.name||"Error")+": "+(e.message||e));
+      }
+
+      $("services").appendChild(box);
+    }
+
+    if(device?.gatt?.connected){
+      log("Service-Scan abgeschlossen und Verbindung ist noch aktiv.");
+    }else{
+      log("⚠️ Verbindung ist während des Service-Scans abgebrochen.");
+    }
+  }catch(e){
+    log("SCAN ERROR: "+(e.name||"Error")+": "+(e.message||e));
+    if(!device?.gatt?.connected) onDisconnect();
+  }
+}
+
+async function stabilityTest(){
+  if(!device?.gatt?.connected){
+    log("Stabilitätstest nicht möglich.");
+    return;
+  }
+
+  log("15-Sekunden-Test gestartet: KEINE GATT-Operationen.");
+  const start=Date.now();
+
+  await new Promise(resolve=>{
+    const id=setInterval(()=>{
+      if(!device?.gatt?.connected){
+        clearInterval(id);
+        resolve();
+      }else if(Date.now()-start>=15000){
+        clearInterval(id);
+        resolve();
+      }
+    },100);
+  });
+
+  if(device?.gatt?.connected){
+    log("✅ 15 Sekunden stabil verbunden.");
+    log("Damit ist ein reines Connect/Signal-Problem weniger wahrscheinlich.");
+  }else{
+    log("❌ Verbindung ist innerhalb des 15-Sekunden-Tests abgebrochen.");
+  }
+}
+
+$("connect").addEventListener("click",async()=>{
+  try{
+    if(!device) await choose();
+    await connect();
+  }catch(e){
+    setStatus("Nicht verbunden","offline");
+    ui(false);
+    log("FEHLER: "+(e.name||"Error")+": "+(e.message||e));
+  }
+});
+
+$("disconnect").addEventListener("click",disconnect);
+$("scan").addEventListener("click",scanServices);
+$("test10").addEventListener("click",stabilityTest);
+$("clear").addEventListener("click",()=>logBox.textContent="");
+
+(async()=>{
+  log("NAVEE V40i Pro Diagnose bereit.");
+  log("Keine Motor- oder Konfigurationsbefehle werden gesendet.");
+  log("Für Web Bluetooth muss die Seite über HTTPS laufen.");
+  await checkBluetooth();
+})();
+</script>
+</body>
+</html>
