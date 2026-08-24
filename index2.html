@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>NAVEE V40i Pro – BLE</title>
+
+<style>
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #0b0f17;
+  color: white;
+  padding: 16px;
+}
+
+h1 {
+  font-size: 24px;
+}
+
+.card {
+  background: #151b26;
+  border: 1px solid #263246;
+  border-radius: 18px;
+  padding: 18px;
+  margin-bottom: 16px;
+}
+
+button {
+  width: 100%;
+  padding: 16px;
+  margin-top: 10px;
+  border: 0;
+  border-radius: 12px;
+  background: #2979ff;
+  color: white;
+  font-size: 17px;
+}
+
+button:disabled {
+  opacity: .5;
+}
+
+.green {
+  color: #5eea8b;
+}
+
+.red {
+  color: #ff7070;
+}
+
+#log {
+  background: #05080e;
+  padding: 14px;
+  border-radius: 12px;
+  min-height: 180px;
+  max-height: 400px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: monospace;
+  font-size: 13px;
+}
+
+.service {
+  background: #0d131e;
+  border-radius: 12px;
+  padding: 12px;
+  margin-top: 10px;
+  word-break: break-all;
+}
+
+.small {
+  color: #aab5c5;
+  font-size: 13px;
+}
+
+#battery {
+  font-size: 42px;
+  font-weight: bold;
+}
+</style>
+</head>
+
+<body>
+
+<h1>🛴 NAVEE V40i Pro</h1>
+
+<div class="card">
+  <div id="status" class="red">● Nicht verbunden</div>
+  <p id="deviceName">Kein Gerät ausgewählt</p>
+
+  <button id="connect">🔵 Scooter verbinden</button>
+  <button id="disconnect" disabled>Trennen</button>
+</div>
+
+<div class="card">
+  <div class="small">AKKU</div>
+  <div id="battery">--%</div>
+</div>
+
+<div class="card">
+  <h2>BLE-Struktur</h2>
+  <div id="services">
+    Noch nicht gescannt.
+  </div>
+</div>
+
+<div class="card">
+  <h2>Diagnose</h2>
+  <div id="log"></div>
+</div>
+
+<script>
+
+let device = null;
+let server = null;
+
+const connectBtn = document.getElementById("connect");
+const disconnectBtn = document.getElementById("disconnect");
+const status = document.getElementById("status");
+const deviceName = document.getElementById("deviceName");
+const battery = document.getElementById("battery");
+const servicesDiv = document.getElementById("services");
+const logDiv = document.getElementById("log");
+
+
+function log(text) {
+  const time = new Date().toLocaleTimeString();
+
+  logDiv.textContent +=
+    `[${time}] ${text}\n`;
+
+  logDiv.scrollTop = logDiv.scrollHeight;
+}
+
+
+connectBtn.onclick = async () => {
+
+  try {
+
+    if (!navigator.bluetooth) {
+      alert("Web Bluetooth wird nicht unterstützt.");
+      return;
+    }
+
+    log("Bluetooth-Geräteauswahl wird geöffnet...");
+
+    device = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+
+      optionalServices: [
+        "battery_service",
+        "generic_access",
+        "generic_attribute",
+        "device_information"
+      ]
+    });
+
+    deviceName.textContent =
+      device.name || "Unbekanntes Gerät";
+
+    log(
+      "Gerät gewählt: " +
+      (device.name || "Unbekannt")
+    );
+
+    device.addEventListener(
+      "gattserverdisconnected",
+      disconnected
+    );
+
+    log("Verbinde...");
+
+    server = await device.gatt.connect();
+
+    status.textContent = "● Verbunden";
+    status.className = "green";
+
+    connectBtn.disabled = true;
+    disconnectBtn.disabled = false;
+
+    log("GATT verbunden.");
+
+    await readBattery();
+    await scanServices();
+
+  } catch (error) {
+
+    log("FEHLER: " + error.message);
+
+  }
+
+};
+
+
+async function readBattery() {
+
+  try {
+
+    const service =
+      await server.getPrimaryService(
+        "battery_service"
+      );
+
+    const characteristic =
+      await service.getCharacteristic(
+        "battery_level"
+      );
+
+    const value =
+      await characteristic.readValue();
+
+    const percent =
+      value.getUint8(0);
+
+    battery.textContent =
+      percent + "%";
+
+    log(
+      "Akku: " +
+      percent +
+      "%"
+    );
+
+  } catch (error) {
+
+    log(
+      "Battery Service nicht verfügbar."
+    );
+
+  }
+
+}
+
+
+async function scanServices() {
+
+  try {
+
+    servicesDiv.innerHTML = "";
+
+    log("Scanne zugängliche Services...");
+
+    const services =
+      await server.getPrimaryServices();
+
+    log(
+      services.length +
+      " Service(s) gefunden."
+    );
+
+    for (const service of services) {
+
+      const box =
+        document.createElement("div");
+
+      box.className = "service";
+
+      box.innerHTML =
+        "<b>Service</b><br>" +
+        service.uuid;
+
+      try {
+
+        const characteristics =
+          await service.getCharacteristics();
+
+        for (
+          const characteristic
+          of characteristics
+        ) {
+
+          const p =
+            document.createElement("p");
+
+          p.className = "small";
+
+          p.innerHTML =
+            "↳ Characteristic:<br>" +
+            characteristic.uuid;
+
+          box.appendChild(p);
+
+        }
+
+      } catch (error) {
+
+        log(
+          "Characteristics konnten nicht gelesen werden: " +
+          service.uuid
+        );
+
+      }
+
+      servicesDiv.appendChild(box);
+
+    }
+
+  } catch (error) {
+
+    log(
+      "Scan-Fehler: " +
+      error.message
+    );
+
+  }
+
+}
+
+
+disconnectBtn.onclick = () => {
+
+  if (
+    device &&
+    device.gatt.connected
+  ) {
+
+    device.gatt.disconnect();
+
+  }
+
+};
+
+
+function disconnected() {
+
+  status.textContent =
+    "● Nicht verbunden";
+
+  status.className = "red";
+
+  connectBtn.disabled = false;
+
+  disconnectBtn.disabled = true;
+
+  log("Verbindung getrennt.");
+
+}
+
+
+log(
+  "Bereit. Für Bluetooth wird HTTPS benötigt."
+);
+
+</script>
+
+</body>
+</html>
