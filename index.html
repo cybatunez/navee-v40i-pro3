@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#111827" />
+  <title>NAVEE Control</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <header>
+    <div>
+      <h1>NAVEE Control</h1>
+      <p>Bluetooth Diagnose & Dashboard</p>
+    </div>
+
+    <span id="connectionStatus" class="status offline">
+      Nicht verbunden
+    </span>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h2 id="deviceName">Kein Scooter verbunden</h2>
+      <p id="deviceInfo">Verbinde deinen NAVEE E-Scooter per Bluetooth.</p>
+
+      <button id="connectBtn" class="primary">
+        🔵 Scooter verbinden
+      </button>
+
+      <button id="disconnectBtn" class="secondary" disabled>
+        Verbindung trennen
+      </button>
+    </section>
+
+    <section class="grid">
+      <div class="card">
+        <span class="label">Bluetooth</span>
+        <strong id="bluetoothState">Prüfung...</strong>
+      </div>
+
+      <div class="card">
+        <span class="label">GATT</span>
+        <strong id="gattState">Nicht verbunden</strong>
+      </div>
+
+      <div class="card">
+        <span class="label">Services</span>
+        <strong id="serviceCount">0</strong>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panelHeader">
+        <h2>BLE Scanner</h2>
+        <button id="scanBtn" disabled>Services scannen</button>
+      </div>
+
+      <p class="hint">
+        Zeigt zugängliche Bluetooth-GATT-Services und Characteristics an.
+      </p>
+
+      <div id="servicesList" class="servicesList">
+        <p>Noch keine Daten gescannt.</p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Live Log</h2>
+      <pre id="log"></pre>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
