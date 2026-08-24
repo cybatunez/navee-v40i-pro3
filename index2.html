@@ -2,349 +2,1013 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport"
+      content="width=device-width, initial-scale=1.0">
 
-<title>NAVEE V40i Pro – BLE</title>
+<title>NAVEE V40i Pro Control</title>
 
 <style>
 * {
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
   margin: 0;
-  font-family: Arial, sans-serif;
   background: #0b0f17;
-  color: white;
-  padding: 16px;
+  color: #f1f5f9;
+  font-family: Arial, sans-serif;
+}
+
+header {
+  padding: 20px;
+  background: #121927;
+  border-bottom: 1px solid #263247;
 }
 
 h1 {
-  font-size: 24px;
+  margin: 0;
+  font-size: 25px;
+}
+
+.subtitle {
+  color: #94a3b8;
+  margin-top: 6px;
+  font-size: 14px;
+}
+
+main {
+  max-width: 700px;
+  margin: auto;
+  padding: 15px;
 }
 
 .card {
-  background: #151b26;
-  border: 1px solid #263246;
+  background: #151c29;
+  border: 1px solid #273348;
   border-radius: 18px;
   padding: 18px;
-  margin-bottom: 16px;
+  margin-bottom: 15px;
+}
+
+.status {
+  display: inline-block;
+  padding: 8px 12px;
+  border-radius: 30px;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.offline {
+  background: #3a1d25;
+  color: #ff8793;
+}
+
+.connecting {
+  background: #3b3215;
+  color: #ffd35c;
+}
+
+.online {
+  background: #153b2a;
+  color: #62e99b;
 }
 
 button {
   width: 100%;
+  border: none;
+  border-radius: 13px;
   padding: 16px;
   margin-top: 10px;
-  border: 0;
-  border-radius: 12px;
-  background: #2979ff;
+  font-size: 16px;
+  font-weight: bold;
   color: white;
-  font-size: 17px;
+  background: #2563eb;
+  cursor: pointer;
 }
 
 button:disabled {
-  opacity: .5;
+  opacity: 0.45;
 }
 
-.green {
-  color: #5eea8b;
+.danger {
+  background: #9f2935;
 }
 
-.red {
-  color: #ff7070;
+.dark {
+  background: #29364a;
 }
 
-#log {
-  background: #05080e;
-  padding: 14px;
-  border-radius: 12px;
-  min-height: 180px;
-  max-height: 400px;
-  overflow: auto;
-  white-space: pre-wrap;
-  font-family: monospace;
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.value-card {
+  background: #0d131e;
+  border-radius: 14px;
+  padding: 15px;
+}
+
+.label {
+  color: #94a3b8;
   font-size: 13px;
+}
+
+.value {
+  font-size: 30px;
+  font-weight: bold;
+  margin-top: 8px;
+}
+
+.switch-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #0d131e;
+  padding: 16px;
+  border-radius: 14px;
+}
+
+.switch {
+  position: relative;
+  width: 55px;
+  height: 30px;
+}
+
+.switch input {
+  display: none;
+}
+
+.slider {
+  position: absolute;
+  inset: 0;
+  background: #475569;
+  border-radius: 30px;
+  transition: 0.3s;
+}
+
+.slider:before {
+  content: "";
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  left: 3px;
+  top: 3px;
+  background: white;
+  border-radius: 50%;
+  transition: 0.3s;
+}
+
+input:checked + .slider {
+  background: #2563eb;
+}
+
+input:checked + .slider:before {
+  transform: translateX(25px);
+}
+
+#services {
+  max-height: 350px;
+  overflow: auto;
 }
 
 .service {
   background: #0d131e;
   border-radius: 12px;
-  padding: 12px;
+  padding: 14px;
   margin-top: 10px;
   word-break: break-all;
 }
 
+.characteristic {
+  color: #aab7c9;
+  font-size: 13px;
+  margin-top: 10px;
+  padding: 10px;
+  background: #131c2a;
+  border-radius: 8px;
+}
+
+#log {
+  background: #060911;
+  border-radius: 12px;
+  padding: 14px;
+  min-height: 200px;
+  max-height: 400px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: monospace;
+  font-size: 12px;
+  color: #8bd5ff;
+}
+
 .small {
-  color: #aab5c5;
+  color: #94a3b8;
   font-size: 13px;
 }
 
-#battery {
-  font-size: 42px;
-  font-weight: bold;
+.warning {
+  background: #302511;
+  border-left: 3px solid #f4c542;
+  padding: 14px;
+  border-radius: 8px;
+  color: #e7d9b1;
+  font-size: 13px;
 }
 </style>
 </head>
 
 <body>
 
-<h1>🛴 NAVEE V40i Pro</h1>
-
-<div class="card">
-  <div id="status" class="red">● Nicht verbunden</div>
-  <p id="deviceName">Kein Gerät ausgewählt</p>
-
-  <button id="connect">🔵 Scooter verbinden</button>
-  <button id="disconnect" disabled>Trennen</button>
-</div>
-
-<div class="card">
-  <div class="small">AKKU</div>
-  <div id="battery">--%</div>
-</div>
-
-<div class="card">
-  <h2>BLE-Struktur</h2>
-  <div id="services">
-    Noch nicht gescannt.
+<header>
+  <h1>🛴 NAVEE V40i Pro Control</h1>
+  <div class="subtitle">
+    Bluetooth • Diagnose • Fahrfunktionen
   </div>
-</div>
+</header>
+
+<main>
 
 <div class="card">
-  <h2>Diagnose</h2>
-  <div id="log"></div>
+  <div id="status" class="status offline">
+    ● Nicht verbunden
+  </div>
+
+  <h2 id="deviceName">
+    Kein Scooter verbunden
+  </h2>
+
+  <div class="small" id="deviceId">
+    Wähle deinen Scooter über Bluetooth aus.
+  </div>
+
+  <button id="connectBtn">
+    🔵 SCOOTER VERBINDEN
+  </button>
+
+  <button id="disconnectBtn"
+          class="danger"
+          disabled>
+    VERBINDUNG TRENNEN
+  </button>
 </div>
+
+
+<div class="card">
+
+  <h2>Live Daten</h2>
+
+  <div class="grid">
+
+    <div class="value-card">
+      <div class="label">AKKU</div>
+      <div class="value" id="battery">
+        --%
+      </div>
+    </div>
+
+    <div class="value-card">
+      <div class="label">GESCHWINDIGKEIT</div>
+      <div class="value" id="speed">
+        -- km/h
+      </div>
+    </div>
+
+    <div class="value-card">
+      <div class="label">BLUETOOTH</div>
+      <div class="value" id="bluetoothState">
+        --
+      </div>
+    </div>
+
+    <div class="value-card">
+      <div class="label">BLE SERVICES</div>
+      <div class="value" id="serviceCount">
+        0
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+
+<div class="card">
+
+  <h2>Fahrfunktionen</h2>
+
+  <div class="switch-row">
+
+    <div>
+      <strong>Zero Start</strong>
+
+      <div class="small">
+        Startfunktion vorbereiten
+      </div>
+    </div>
+
+    <label class="switch">
+      <input type="checkbox"
+             id="zeroStart">
+      <span class="slider"></span>
+    </label>
+
+  </div>
+
+  <div class="warning" style="margin-top:15px">
+    Der Schalter ist bereit. Damit er tatsächlich
+    eine Einstellung am NAVEE verändert, muss die
+    passende NAVEE-Bluetooth-Characteristic und das
+    offizielle bzw. bekannte Konfigurationskommando
+    identifiziert werden.
+  </div>
+
+</div>
+
+
+<div class="card">
+
+  <h2>Bluetooth Diagnose</h2>
+
+  <button id="scanBtn"
+          class="dark"
+          disabled>
+    🔍 BLE SERVICES SCANNEN
+  </button>
+
+  <button id="reconnectBtn"
+          class="dark"
+          disabled>
+    🔄 ERNEUT VERBINDEN
+  </button>
+
+  <div id="services">
+    <p class="small">
+      Noch kein Scan durchgeführt.
+    </p>
+  </div>
+
+</div>
+
+
+<div class="card">
+
+  <h2>Diagnose Log</h2>
+
+  <button id="clearLogBtn"
+          class="dark">
+    LOG LÖSCHEN
+  </button>
+
+  <div id="log"></div>
+
+</div>
+
+</main>
+
 
 <script>
 
 let device = null;
 let server = null;
 
-const connectBtn = document.getElementById("connect");
-const disconnectBtn = document.getElementById("disconnect");
-const status = document.getElementById("status");
-const deviceName = document.getElementById("deviceName");
-const battery = document.getElementById("battery");
-const servicesDiv = document.getElementById("services");
-const logDiv = document.getElementById("log");
+let reconnectAttempts = 0;
+const maxReconnectAttempts = 3;
+
+const connectBtn =
+  document.getElementById("connectBtn");
+
+const disconnectBtn =
+  document.getElementById("disconnectBtn");
+
+const reconnectBtn =
+  document.getElementById("reconnectBtn");
+
+const scanBtn =
+  document.getElementById("scanBtn");
+
+const clearLogBtn =
+  document.getElementById("clearLogBtn");
+
+const zeroStart =
+  document.getElementById("zeroStart");
+
+const status =
+  document.getElementById("status");
+
+const deviceName =
+  document.getElementById("deviceName");
+
+const deviceId =
+  document.getElementById("deviceId");
+
+const battery =
+  document.getElementById("battery");
+
+const speed =
+  document.getElementById("speed");
+
+const bluetoothState =
+  document.getElementById("bluetoothState");
+
+const serviceCount =
+  document.getElementById("serviceCount");
+
+const services =
+  document.getElementById("services");
+
+const logDiv =
+  document.getElementById("log");
 
 
-function log(text) {
-  const time = new Date().toLocaleTimeString();
+function log(message) {
+
+  const time =
+    new Date().toLocaleTimeString();
 
   logDiv.textContent +=
-    `[${time}] ${text}\n`;
+    "[" + time + "] " +
+    message + "\n";
 
-  logDiv.scrollTop = logDiv.scrollHeight;
+  logDiv.scrollTop =
+    logDiv.scrollHeight;
 }
 
 
-connectBtn.onclick = async () => {
+function setStatus(
+  text,
+  type
+) {
+
+  status.textContent =
+    "● " + text;
+
+  status.className =
+    "status " + type;
+}
+
+
+async function checkBluetooth() {
+
+  if (!navigator.bluetooth) {
+
+    bluetoothState.textContent =
+      "Nicht verfügbar";
+
+    log(
+      "Web Bluetooth wird von diesem Browser nicht unterstützt."
+    );
+
+    return false;
+  }
 
   try {
 
-    if (!navigator.bluetooth) {
-      alert("Web Bluetooth wird nicht unterstützt.");
+    const available =
+      await navigator.bluetooth.getAvailability();
+
+    bluetoothState.textContent =
+      available ? "Bereit" : "Aus";
+
+    return available;
+
+  } catch {
+
+    bluetoothState.textContent =
+      "Bereit";
+
+    return true;
+  }
+}
+
+
+async function connectScooter() {
+
+  try {
+
+    const available =
+      await checkBluetooth();
+
+    if (!available) {
+      alert(
+        "Bluetooth ist nicht verfügbar."
+      );
       return;
     }
 
-    log("Bluetooth-Geräteauswahl wird geöffnet...");
-
-    device = await navigator.bluetooth.requestDevice({
-      acceptAllDevices: true,
-
-      optionalServices: [
-        "battery_service",
-        "generic_access",
-        "generic_attribute",
-        "device_information"
-      ]
-    });
-
-    deviceName.textContent =
-      device.name || "Unbekanntes Gerät";
+    setStatus(
+      "Gerät auswählen...",
+      "connecting"
+    );
 
     log(
-      "Gerät gewählt: " +
-      (device.name || "Unbekannt")
+      "Bluetooth-Auswahl wird geöffnet..."
     );
+
+    device =
+      await navigator.bluetooth.requestDevice({
+
+        acceptAllDevices: true,
+
+        optionalServices: [
+
+          "battery_service",
+
+          "device_information",
+
+          "generic_access",
+
+          "generic_attribute"
+
+        ]
+
+      });
+
+
+    deviceName.textContent =
+      device.name ||
+      "Unbekanntes BLE Gerät";
+
+
+    deviceId.textContent =
+      "ID: " + device.id;
+
+
+    log(
+      "Gerät ausgewählt: " +
+      (
+        device.name ||
+        "Unbekannt"
+      )
+    );
+
 
     device.addEventListener(
       "gattserverdisconnected",
-      disconnected
+      handleDisconnect
     );
 
-    log("Verbinde...");
 
-    server = await device.gatt.connect();
-
-    status.textContent = "● Verbunden";
-    status.className = "green";
-
-    connectBtn.disabled = true;
-    disconnectBtn.disabled = false;
-
-    log("GATT verbunden.");
-
-    await readBattery();
-    await scanServices();
+    await connectGATT();
 
   } catch (error) {
 
-    log("FEHLER: " + error.message);
+    log(
+      "VERBINDUNGSFEHLER: " +
+      error.message
+    );
 
+    setStatus(
+      "Nicht verbunden",
+      "offline"
+    );
   }
+}
 
-};
+
+async function connectGATT() {
+
+  if (!device) return;
+
+  try {
+
+    setStatus(
+      "Verbinde...",
+      "connecting"
+    );
+
+    log(
+      "GATT Verbindung wird aufgebaut..."
+    );
+
+
+    server =
+      await device.gatt.connect();
+
+
+    setStatus(
+      "Verbunden",
+      "online"
+    );
+
+
+    connectBtn.disabled = true;
+
+    disconnectBtn.disabled = false;
+
+    reconnectBtn.disabled = false;
+
+    scanBtn.disabled = false;
+
+
+    reconnectAttempts = 0;
+
+
+    log(
+      "GATT Verbindung erfolgreich."
+    );
+
+
+    await readBattery();
+
+    await scanServices();
+
+
+  } catch (error) {
+
+    log(
+      "GATT FEHLER: " +
+      error.message
+    );
+
+    setStatus(
+      "Getrennt",
+      "offline"
+    );
+  }
+}
 
 
 async function readBattery() {
 
+  if (
+    !server ||
+    !server.connected
+  ) return;
+
   try {
 
-    const service =
+    const batteryService =
       await server.getPrimaryService(
         "battery_service"
       );
 
-    const characteristic =
-      await service.getCharacteristic(
+
+    const batteryCharacteristic =
+      await batteryService.getCharacteristic(
         "battery_level"
       );
 
+
     const value =
-      await characteristic.readValue();
+      await batteryCharacteristic.readValue();
+
 
     const percent =
       value.getUint8(0);
 
+
     battery.textContent =
       percent + "%";
 
+
     log(
-      "Akku: " +
-      percent +
-      "%"
+      "Akku gelesen: " +
+      percent + "%"
     );
+
 
   } catch (error) {
 
     log(
       "Battery Service nicht verfügbar."
     );
-
   }
-
 }
 
 
 async function scanServices() {
 
-  try {
-
-    servicesDiv.innerHTML = "";
-
-    log("Scanne zugängliche Services...");
-
-    const services =
-      await server.getPrimaryServices();
+  if (
+    !server ||
+    !server.connected
+  ) {
 
     log(
-      services.length +
+      "Scan nicht möglich: keine Verbindung."
+    );
+
+    return;
+  }
+
+  try {
+
+    services.innerHTML = "";
+
+    log(
+      "Scanne zugängliche BLE Services..."
+    );
+
+
+    const allServices =
+      await server.getPrimaryServices();
+
+
+    serviceCount.textContent =
+      allServices.length;
+
+
+    log(
+      allServices.length +
       " Service(s) gefunden."
     );
 
-    for (const service of services) {
+
+    for (
+      const service
+      of allServices
+    ) {
 
       const box =
         document.createElement("div");
 
-      box.className = "service";
+
+      box.className =
+        "service";
+
 
       box.innerHTML =
-        "<b>Service</b><br>" +
+        "<strong>Service</strong><br>" +
         service.uuid;
+
 
       try {
 
         const characteristics =
           await service.getCharacteristics();
 
+
         for (
           const characteristic
           of characteristics
         ) {
 
-          const p =
-            document.createElement("p");
+          const charBox =
+            document.createElement("div");
 
-          p.className = "small";
 
-          p.innerHTML =
-            "↳ Characteristic:<br>" +
-            characteristic.uuid;
+          charBox.className =
+            "characteristic";
 
-          box.appendChild(p);
 
+          const properties = [];
+
+
+          if (
+            characteristic.properties.read
+          ) {
+            properties.push("READ");
+          }
+
+
+          if (
+            characteristic.properties.write
+          ) {
+            properties.push("WRITE");
+          }
+
+
+          if (
+            characteristic.properties.writeWithoutResponse
+          ) {
+            properties.push(
+              "WRITE_NO_RESPONSE"
+            );
+          }
+
+
+          if (
+            characteristic.properties.notify
+          ) {
+            properties.push("NOTIFY");
+          }
+
+
+          charBox.innerHTML =
+            "<strong>Characteristic</strong><br>" +
+            characteristic.uuid +
+            "<br><br>" +
+            properties.join(", ");
+
+
+          box.appendChild(
+            charBox
+          );
+
+
+          log(
+            "Characteristic: " +
+            characteristic.uuid
+          );
         }
 
       } catch (error) {
 
         log(
-          "Characteristics konnten nicht gelesen werden: " +
+          "Characteristics nicht lesbar: " +
           service.uuid
         );
-
       }
 
-      servicesDiv.appendChild(box);
+
+      services.appendChild(box);
+    }
+
+  } catch (error) {
+
+    log(
+      "SCAN FEHLER: " +
+      error.message
+    );
+  }
+}
+
+
+function handleDisconnect() {
+
+  log(
+    "Scooter hat Bluetooth-Verbindung getrennt."
+  );
+
+
+  setStatus(
+    "Getrennt",
+    "offline"
+  );
+
+
+  connectBtn.disabled = false;
+
+  disconnectBtn.disabled = true;
+
+
+  speed.textContent =
+    "-- km/h";
+
+
+  if (
+    reconnectAttempts <
+    maxReconnectAttempts
+  ) {
+
+    reconnectAttempts++;
+
+
+    log(
+      "Automatischer Wiederverbindungsversuch " +
+      reconnectAttempts +
+      "/" +
+      maxReconnectAttempts
+    );
+
+
+    setTimeout(
+      reconnect,
+      1500
+    );
+  }
+}
+
+
+async function reconnect() {
+
+  if (!device) return;
+
+  try {
+
+    if (
+      !device.gatt.connected
+    ) {
+
+      log(
+        "Versuche erneut zu verbinden..."
+      );
+
+
+      server =
+        await device.gatt.connect();
+
+
+      setStatus(
+        "Verbunden",
+        "online"
+      );
+
+
+      connectBtn.disabled = true;
+
+      disconnectBtn.disabled = false;
+
+      log(
+        "Wiederverbindung erfolgreich."
+      );
+
+
+      await readBattery();
 
     }
 
   } catch (error) {
 
     log(
-      "Scan-Fehler: " +
+      "Wiederverbindung fehlgeschlagen: " +
       error.message
     );
-
   }
-
 }
 
 
-disconnectBtn.onclick = () => {
+function disconnectScooter() {
+
+  reconnectAttempts =
+    maxReconnectAttempts;
+
 
   if (
     device &&
     device.gatt.connected
   ) {
 
+    log(
+      "Verbindung wird getrennt..."
+    );
+
+
     device.gatt.disconnect();
-
   }
-
-};
-
-
-function disconnected() {
-
-  status.textContent =
-    "● Nicht verbunden";
-
-  status.className = "red";
-
-  connectBtn.disabled = false;
-
-  disconnectBtn.disabled = true;
-
-  log("Verbindung getrennt.");
-
 }
 
 
+zeroStart.addEventListener(
+  "change",
+  () => {
+
+    if (zeroStart.checked) {
+
+      log(
+        "Zero Start aktiviert."
+      );
+
+
+      log(
+        "Warte auf NAVEE-Konfigurationsprotokoll."
+      );
+
+    } else {
+
+      log(
+        "Zero Start deaktiviert."
+      );
+    }
+
+  }
+);
+
+
+connectBtn.addEventListener(
+  "click",
+  connectScooter
+);
+
+
+disconnectBtn.addEventListener(
+  "click",
+  disconnectScooter
+);
+
+
+reconnectBtn.addEventListener(
+  "click",
+  reconnect
+);
+
+
+scanBtn.addEventListener(
+  "click",
+  scanServices
+);
+
+
+clearLogBtn.addEventListener(
+  "click",
+  () => {
+    logDiv.textContent = "";
+  }
+);
+
+
+checkBluetooth();
+
+
 log(
-  "Bereit. Für Bluetooth wird HTTPS benötigt."
+  "NAVEE Control bereit."
+);
+
+
+log(
+  "Für Web Bluetooth ist HTTPS erforderlich."
 );
 
 </script>
