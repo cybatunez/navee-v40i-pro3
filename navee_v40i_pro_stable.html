@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>NAVEE V40i Pro – BLE Control</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:#0b0f17;color:#f1f5f9;font-family:Arial,sans-serif}
+main{max-width:620px;margin:auto;padding:16px}
+header{padding:20px;background:#121927;border-bottom:1px solid #263247}
+h1{margin:0;font-size:24px}.sub,.small{color:#94a3b8;font-size:13px}
+.card{background:#151c29;border:1px solid #273348;border-radius:18px;padding:18px;margin-bottom:14px}
+.status{display:inline-block;padding:8px 12px;border-radius:30px;font-weight:bold;font-size:14px}
+.offline{background:#3a1d25;color:#ff8793}.connecting{background:#3b3215;color:#ffd35c}.online{background:#153b2a;color:#62e99b}
+button{width:100%;border:0;border-radius:14px;padding:16px;margin-top:10px;font-size:16px;font-weight:bold;color:#fff;background:#2563eb}
+button:disabled{opacity:.45}.danger{background:#9f2935}.dark{background:#29364a}
+#zeroStart{height:120px;font-size:28px;background:#29364a}
+#zeroStart.enabled{background:#2563eb}
+#zeroStart.armed{background:#b45309}
+#log{background:#060911;border-radius:12px;padding:12px;min-height:140px;max-height:280px;overflow:auto;white-space:pre-wrap;font:12px monospace;color:#8bd5ff}
+.warning{background:#302511;border-left:3px solid #f4c542;padding:13px;border-radius:8px;color:#e7d9b1;font-size:13px;line-height:1.4}
+.value{font-size:26px;font-weight:bold;margin-top:7px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.value-card{background:#0d131e;border-radius:13px;padding:14px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🛴 NAVEE V40i Pro</h1>
+  <div class="sub">Stabile Android-BLE-Verbindung</div>
+</header>
+
+<main>
+  <section class="card">
+    <div id="status" class="status offline">● Nicht verbunden</div>
+    <h2 id="deviceName">Kein Scooter verbunden</h2>
+    <div class="small" id="deviceId">Bluetooth-Gerät auswählen.</div>
+    <button id="connectBtn">🔵 SCOOTER VERBINDEN</button>
+    <button id="disconnectBtn" class="danger" disabled>VERBINDUNG TRENNEN</button>
+  </section>
+
+  <section class="card">
+    <h2>Verbindung</h2>
+    <div class="grid">
+      <div class="value-card"><div class="small">Bluetooth</div><div class="value" id="bt">--</div></div>
+      <div class="value-card"><div class="small">Status</div><div class="value" id="conn">--</div></div>
+    </div>
+    <button id="reconnectBtn" class="dark" disabled>🔄 JETZT ERNEUT VERBINDEN</button>
+  </section>
+
+  <section class="card">
+    <h2>Zero Start</h2>
+    <button id="zeroStart" disabled>ZERO START</button>
+    <div class="warning" style="margin-top:12px">
+      Der Button ist bewusst noch nicht mit einem Motor-Kommando belegt. Beim V40i Pro ist das genaue BLE-Schreibkommando in den gefundenen offiziellen Unterlagen nicht dokumentiert. Ein erfundenes Kommando könnte den Scooter unerwartet ansteuern.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Log</h2>
+    <button id="clearLog" class="dark">LOG LÖSCHEN</button>
+    <div id="log"></div>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+let device = null;
+let server = null;
+let shouldReconnect = false;
+let connecting = false;
+let reconnectTimer = null;
+let reconnectDelay = 1200;
+
+const $ = id => document.getElementById(id);
+const status = $("status");
+const bt = $("bt");
+const conn = $("conn");
+const logBox = $("log");
+const connectBtn = $("connectBtn");
+const disconnectBtn = $("disconnectBtn");
+const reconnectBtn = $("reconnectBtn");
+const zeroStart = $("zeroStart");
+
+function log(msg){
+  const t = new Date().toLocaleTimeString();
+  logBox.textContent += `[${t}] ${msg}\n`;
+  logBox.scrollTop = logBox.scrollHeight;
+}
+
+function setStatus(text,type){
+  status.textContent = "● " + text;
+  status.className = "status " + type;
+  conn.textContent = text;
+}
+
+async function bluetoothAvailable(){
+  if(!navigator.bluetooth){
+    bt.textContent = "Nicht unterstützt";
+    log("Web Bluetooth wird von diesem Browser nicht unterstützt.");
+    return false;
+  }
+  try{
+    const ok = await navigator.bluetooth.getAvailability();
+    bt.textContent = ok ? "Bereit" : "Aus";
+    return ok;
+  }catch{
+    bt.textContent = "Bereit";
+    return true;
+  }
+}
+
+function setConnectedUI(on){
+  connectBtn.disabled = on;
+  disconnectBtn.disabled = !on;
+  reconnectBtn.disabled = !device;
+  zeroStart.disabled = !on;
+}
+
+async function chooseDevice(){
+  const ok = await bluetoothAvailable();
+  if(!ok) throw new Error("Bluetooth ist nicht verfügbar.");
+
+  /*
+   * acceptAllDevices bleibt absichtlich erhalten:
+   * Wir kennen das V40i-Pro-Custom-Service-UUID nicht zuverlässig.
+   * Dadurch kann Chrome den Scooter auswählen, ohne ein falsches UUID-Filter
+   * zu erzwingen.
+   */
+  device = await navigator.bluetooth.requestDevice({
+    acceptAllDevices: true,
+    optionalServices: [
+      "battery_service",
+      "device_information",
+      "generic_access",
+      "generic_attribute"
+    ]
+  });
+
+  $("deviceName").textContent = device.name || "NAVEE / unbekanntes BLE-Gerät";
+  $("deviceId").textContent = "ID: " + device.id;
+
+  if(device._disconnectHandler)
+    device.removeEventListener("gattserverdisconnected", device._disconnectHandler);
+
+  device._disconnectHandler = handleDisconnect;
+  device.addEventListener("gattserverdisconnected", device._disconnectHandler);
+
+  log("Gerät ausgewählt: " + (device.name || "unbekannt"));
+}
+
+async function connectGATT(){
+  if(!device || connecting) return false;
+  if(device.gatt && device.gatt.connected){
+    server = device.gatt;
+    setStatus("Verbunden","online");
+    setConnectedUI(true);
+    return true;
+  }
+
+  connecting = true;
+  try{
+    setStatus("Verbinde…","connecting");
+    log("GATT-Verbindung wird aufgebaut…");
+
+    server = await device.gatt.connect();
+
+    if(!server.connected) throw new Error("GATT meldet keine Verbindung.");
+
+    shouldReconnect = true;
+    reconnectDelay = 1200;
+    setStatus("Verbunden","online");
+    setConnectedUI(true);
+    log("GATT-Verbindung stabil hergestellt.");
+    return true;
+  }catch(e){
+    server = null;
+    setStatus("Nicht verbunden","offline");
+    setConnectedUI(false);
+    log("Verbindung fehlgeschlagen: " + (e.message || e));
+    return false;
+  }finally{
+    connecting = false;
+  }
+}
+
+async function connectScooter(){
+  try{
+    shouldReconnect = true;
+    if(!device) await chooseDevice();
+    await connectGATT();
+  }catch(e){
+    shouldReconnect = false;
+    setStatus("Nicht verbunden","offline");
+    setConnectedUI(false);
+    log("Bluetooth-Fehler: " + (e.message || e));
+  }
+}
+
+function scheduleReconnect(){
+  if(!shouldReconnect || !device || reconnectTimer || connecting) return;
+
+  const delay = Math.min(reconnectDelay, 10000);
+  log(`Automatische Wiederverbindung in ${delay/1000}s…`);
+
+  reconnectTimer = setTimeout(async ()=>{
+    reconnectTimer = null;
+    const ok = await connectGATT();
+    if(!ok){
+      reconnectDelay = Math.min(reconnectDelay * 1.7, 10000);
+      scheduleReconnect();
+    }
+  }, delay);
+}
+
+function handleDisconnect(){
+  server = null;
+  setStatus("Getrennt","offline");
+  setConnectedUI(false);
+  log("Scooter hat die BLE-Verbindung getrennt.");
+
+  if(shouldReconnect) scheduleReconnect();
+}
+
+async function reconnectNow(){
+  if(!device){
+    log("Kein zuvor ausgewähltes Gerät vorhanden.");
+    return;
+  }
+  shouldReconnect = true;
+  reconnectDelay = 1200;
+  if(reconnectTimer){
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  await connectGATT();
+}
+
+function disconnectScooter(){
+  shouldReconnect = false;
+  if(reconnectTimer){
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+
+  if(device?.gatt?.connected){
+    log("Verbindung wird bewusst getrennt…");
+    device.gatt.disconnect();
+  }else{
+    setConnectedUI(false);
+    setStatus("Nicht verbunden","offline");
+  }
+}
+
+/*
+ * Wichtig:
+ * Kein unbekanntes BLE-Motor-Kommando wird hier erfunden.
+ * Für einen echten Zero-Start-Schreibbefehl brauchen wir die beim V40i Pro
+ * tatsächlich verwendete Custom-Characteristic + das dokumentierte Kommando.
+ */
+zeroStart.addEventListener("click", ()=>{
+  if(zeroStart.disabled) return;
+
+  zeroStart.classList.toggle("armed");
+  const active = zeroStart.classList.contains("armed");
+  zeroStart.textContent = active ? "ZERO START BEREIT" : "ZERO START";
+  log(active
+    ? "Zero-Start-Schalter aktiviert – kein BLE-Motorbefehl gesendet."
+    : "Zero-Start-Schalter deaktiviert.");
+});
+
+connectBtn.addEventListener("click", connectScooter);
+disconnectBtn.addEventListener("click", disconnectScooter);
+reconnectBtn.addEventListener("click", reconnectNow);
+$("clearLog").addEventListener("click", ()=>logBox.textContent="");
+
+window.addEventListener("pagehide", ()=>{
+  /*
+   * Nicht absichtlich disconnecten: Android/Chrome kann die Seite sonst
+   * beim Wechseln kurz inaktiv setzen und die Verbindung unnötig verlieren.
+   */
+});
+
+(async()=>{
+  log("NAVEE BLE Control bereit.");
+  log("Für Web Bluetooth muss die Seite über HTTPS laufen.");
+  log("Tipp: Telefon beim Testen nahe am Scooter halten.");
+  await bluetoothAvailable();
+})();
+</script>
+</body>
+</html>
